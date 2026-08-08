@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Observability — Platform Architecture</title>
+<link rel="stylesheet" href="assets/style.css?v=6">
+</head>
+<body>
+
+<nav class="top"><div class="inner">
+  <a class="home" href="index.html">Platform Architecture</a>
+  <a href="index.html">Overview</a>
+  <a href="flows.html">Walkthroughs</a>
+  <a href="inference.html">Inference</a>
+  <a href="data.html">Data</a>
+  <a class="here" href="observability.html">Observability</a>
+  <a href="mcp.html">MCP</a>
+</div></nav>
+
+<div class="wrap">
+
+<h1>Observability</h1>
+<p class="lede">One Prometheus scrapes the whole estate — across the network boundary.
+OpenTelemetry exists for exactly one reason, Alertmanager for exactly one more, and Grafana
+turns the result into dashboards.</p>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart TB
+
+  subgraph SRC[" Scrape targets "]
+    WUI("<b>OpenWebUI</b><br/><small>3 pods · cluster</small>")
+    GW{{"<b>LiteLLM</b><br/><small>5 pods · cluster</small>"}}
+    VLLM("<b>All vLLM instances</b><br/><small>7 VMs · segregated network</small>")
+  end
+
+  OTEL("<b>OpenTelemetry</b><br/><small>1 pod · translates OpenWebUI<br/>metrics into Prometheus format</small>")
+  PROM(("<b>Prometheus</b>"))
+  AM(["<b>Alertmanager</b><br/><small>1 pod · alerts when something is down</small>"])
+
+  subgraph EXT[" Not deployed by this platform "]
+    GRAF("<b>Grafana</b><br/><small>central shared instance</small>")
+  end
+
+  WUI -->|"native metrics"| OTEL
+  OTEL --> PROM
+  GW -->|"direct"| PROM
+  VLLM -->|"cross-network"| PROM
+  PROM --> AM
+  PROM -->|"datasource"| GRAF
+  click GW href "inference.html" "LiteLLM gateway detail"
+  click VLLM href "inference.html" "The GPU/vLLM model fleet"
+
+  classDef ui fill:#12294d,stroke:#60a5fa,stroke-width:2.5px,color:#dbeafe;
+  classDef gate fill:#40280c,stroke:#fbbf24,stroke-width:3px,color:#fde68a;
+  classDef model fill:#0c3327,stroke:#34d399,stroke-width:2.5px,color:#d1fae5;
+  classDef otel fill:#26330d,stroke:#a3e635,stroke-width:2.5px,color:#ecfccb;
+  classDef prom fill:#43220a,stroke:#fb923c,stroke-width:3px,color:#fed7aa;
+  classDef alert fill:#450f1c,stroke:#fb7185,stroke-width:2.5px,color:#fecdd3;
+  classDef external fill:#1b2333,stroke:#94a3b8,stroke-width:2px,stroke-dasharray:6 4,color:#e2e8f0;
+  class WUI ui
+  class GW gate
+  class VLLM model
+  class OTEL otel
+  class PROM prom
+  class AM alert
+  class GRAF external
+
+  style SRC fill:#1a2234,stroke:#4b5a72,stroke-width:2px
+  style EXT fill:#1b2333,stroke:#64748b,stroke-width:2px,stroke-dasharray:6 4
+</pre>
+</div>
+
+<h2>Why OpenTelemetry is in the picture</h2>
+<p>The OTel Collector is <strong>not a general-purpose tracing backbone here</strong>. Its
+whole purpose is narrow and specific: <strong>take the metrics OpenWebUI emits and make them
+Prometheus-friendly.</strong> OpenWebUI is the one component whose native metric output
+doesn't drop straight into a Prometheus scrape, so OTel sits in between as a translator.</p>
+
+<div class="hint">
+  Everything else — LiteLLM and all seven vLLM instances — is scraped by Prometheus
+  <strong>directly</strong>. Only OpenWebUI takes the detour through OTel.
+</div>
+
+<h2>What Prometheus scrapes</h2>
+<table>
+<thead><tr><th>Target</th><th>Location</th><th>Path</th></tr></thead>
+<tbody>
+  <tr><td>LiteLLM (5 pods)</td><td>Cluster network · in-cluster</td><td>Scraped directly</td></tr>
+  <tr><td>OpenWebUI (3 pods)</td><td>Cluster network · in-cluster</td><td>Via the OTel Collector</td></tr>
+  <tr><td>All vLLM instances (7 VMs)</td><td>Segregated network</td>
+      <td>Scraped directly, across the network boundary</td></tr>
+  <tr><td>Grafana <em>(consumer, not a target)</em></td><td>External · shared instance</td>
+      <td>Queries Prometheus as a datasource; dashboards only</td></tr>
+</tbody>
+</table>
+
+<p>That cross-network scrape is worth calling out: Prometheus lives in the cluster but reaches
+out to the GPU fleet on the other network, which is one of the specific flows the inter-network
+rules are there to permit.</p>
+
+<h2>Grafana — dashboards, but not ours to run</h2>
+<p>Grafana is <strong>not part of this platform's deployment</strong>. It is a
+<strong>central, shared instance</strong> that already existed and is operated by someone
+else; what belongs to this platform is the <strong>set of dashboards built inside it</strong>
+for OpenWebUI, LiteLLM and the vLLM fleet. That is why it is drawn with a
+<strong>dashed border</strong> everywhere on this site.</p>
+<p>The connection is a <strong>Prometheus datasource</strong>: Grafana queries Prometheus when
+a dashboard loads, rather than Prometheus pushing anything out. The arrow is drawn in the
+direction the metrics travel, but the request originates at Grafana.</p>
+
+<div class="hint">
+  Because Grafana lives outside this platform's control, its availability and access model are
+  someone else's to manage — while the dashboards themselves depend on this platform's
+  Prometheus. Worth knowing which half of that picture you own when a dashboard looks wrong.
+</div>
+
+<h2>Alerting</h2>
+<p><strong>Alertmanager consumes Prometheus and fires when something goes down.</strong>
+That's the stated scope — availability alerting over the platform's components, rather than
+deep SLO or capacity alerting.</p>
+
+<h2>What this gives you</h2>
+<ul class="tight">
+  <li><strong>Gateway-level visibility</strong> — LiteLLM metrics cover every request in the
+    platform, since all traffic funnels through it.</li>
+  <li><strong>Per-model visibility</strong> — scraping each vLLM instance individually means
+    per-VM GPU and throughput data, not just an aggregate.</li>
+  <li><strong>User-facing visibility</strong> — OpenWebUI metrics, once normalized, land in
+    the same Prometheus as everything else.</li>
+  <li><strong>Dashboards without owning the tool</strong> — the Grafana instance is shared and
+    external; only the dashboards for these apps belong to this platform.</li>
+</ul>
+
+<p class="disclaimer">Generalized reference architecture. Component counts, model
+choices and topology are illustrative of the design pattern rather than a description of any
+live deployment; hostnames, addresses, ports and environment specifics are deliberately
+omitted.</p>
+<footer><a href="index.html">← Back to the bird view</a> · Last updated 2026-08-08</footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script src="assets/diagram.js?v=6"></script>
+</body>
+</html>

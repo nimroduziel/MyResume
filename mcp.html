@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MCP Servers — Platform Architecture</title>
+<link rel="stylesheet" href="assets/style.css?v=6">
+</head>
+<body>
+
+<nav class="top"><div class="inner">
+  <a class="home" href="index.html">Platform Architecture</a>
+  <a href="index.html">Overview</a>
+  <a href="flows.html">Walkthroughs</a>
+  <a href="inference.html">Inference</a>
+  <a href="data.html">Data</a>
+  <a href="observability.html">Observability</a>
+  <a class="here" href="mcp.html">MCP</a>
+</div></nav>
+
+<div class="wrap">
+
+<h1>MCP Servers</h1>
+<p class="lede">Three tool servers in one namespace, one pod each — and crucially,
+<strong>two</strong> client surfaces consuming them.</p>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart TB
+
+  subgraph CLIENTS[" MCP clients "]
+    WUI(["<b>OpenWebUI</b><br/><small>3 pods · in-cluster</small>"])
+    CCLI(["<b>Claude Code CLI</b><br/><small>user workstations</small>"])
+  end
+
+  subgraph NS[" namespace: MCPs · the cluster network "]
+    CONF("<b>Confluence MCP</b><br/><small>1 pod</small>")
+    JIRA("<b>Jira MCP</b><br/><small>1 pod</small>")
+    GIT("<b>GitLab MCP</b><br/><small>1 pod</small>")
+  end
+
+  subgraph BACK[" Backing systems "]
+    BC[("Confluence")]
+    BJ[("Jira")]
+    BG[("GitLab")]
+  end
+
+  WUI --> CONF
+  WUI --> JIRA
+  WUI --> GIT
+  CCLI --> CONF
+  CCLI --> JIRA
+  CCLI --> GIT
+
+  CONF --> BC
+  JIRA --> BJ
+  GIT --> BG
+
+  classDef client fill:#241f4d,stroke:#a78bfa,stroke-width:2.5px,color:#ede9fe;
+  classDef mcp fill:#0a3b36,stroke:#2dd4bf,stroke-width:2.5px,color:#ccfbf1;
+  classDef backend fill:#1b2333,stroke:#94a3b8,stroke-width:2px,stroke-dasharray:6 4,color:#cbd5e1;
+  class WUI,CCLI client
+  class CONF,JIRA,GIT mcp
+  class BC,BJ,BG backend
+
+  style CLIENTS fill:#1b1830,stroke:#6d5ba8,stroke-width:2px
+  style NS fill:#0c2f2c,stroke:#2f7f74,stroke-width:2px
+  style BACK fill:#1b2333,stroke:#64748b,stroke-width:2px,stroke-dasharray:6 4
+</pre>
+</div>
+
+<h2>The servers</h2>
+<table>
+<thead><tr><th>Server</th><th>Pods</th><th>Deployment</th><th>Surfaces</th></tr></thead>
+<tbody>
+  <tr><td><strong>Confluence MCP</strong></td><td>1</td><td>Helm chart</td>
+      <td>Wiki/documentation search and retrieval</td></tr>
+  <tr><td><strong>Jira MCP</strong></td><td>1</td><td>Helm chart</td>
+      <td>Issue lookup, ticket context and updates</td></tr>
+  <tr><td><strong>GitLab MCP</strong></td><td>1</td><td>Helm chart</td>
+      <td>Repository, merge request and pipeline context</td></tr>
+</tbody>
+</table>
+
+<h2>Two clients, same servers</h2>
+
+<h3>OpenWebUI</h3>
+<p>Wired up as an MCP client so chat users get Confluence, Jira and GitLab context inside
+ordinary conversations, without leaving the UI.</p>
+
+<h3>Claude Code</h3>
+<p>Engineers' Claude Code sessions are configured against the <strong>same three
+servers</strong>. So an engineer at the CLI and a chat user in the browser are hitting one
+shared set of tool servers — one place to deploy, upgrade and secure them.</p>
+
+<div class="hint">
+  <strong>Worth noting about the topology:</strong> these tool servers are shared rather than
+  duplicated per client, so both surfaces stay in step automatically — one place to deploy,
+  upgrade and secure them. The flip side is that they were sized for a tool-call workload
+  rather than for redundancy, which puts replication on the roadmap alongside the retrieval
+  models.
+</div>
+
+<h2>How this fits the wider platform</h2>
+<p>MCP traffic is <strong>separate from inference traffic</strong>. A request to a model goes
+through <a href="inference.html">LiteLLM</a>; a request for a Jira ticket goes straight to the
+Jira MCP pod. Both clients therefore hold two independent relationships: one with the
+gateway, one with the tool servers. Only the model path crosses into the segregated network — MCP calls stay
+entirely within the cluster network.</p>
+
+<p class="disclaimer">Generalized reference architecture. Component counts, model
+choices and topology are illustrative of the design pattern rather than a description of any
+live deployment; hostnames, addresses, ports and environment specifics are deliberately
+omitted.</p>
+<footer><a href="index.html">← Back to the bird view</a> · Last updated 2026-08-08</footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script src="assets/diagram.js?v=6"></script>
+</body>
+</html>

@@ -1,0 +1,358 @@
+:root {
+  --bg: #ffffff;
+  --bg-soft: #f7f9fc;
+  --fg: #1c2333;
+  --fg-muted: #5b6577;
+  --border: #dfe5ee;
+  --accent: #4f46e5;
+  --accent-soft: #eef0ff;
+  --r: 16px;
+  --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 8px 24px -12px rgba(16, 24, 40, .18);
+
+  --c1: #4f46e5; /* indigo  — users / nav */
+  --c2: #2563eb; /* blue    — openwebui */
+  --c3: #d97706; /* amber   — litellm gateway */
+  --c4: #059669; /* green   — models */
+  --c5: #9333ea; /* purple  — vector */
+  --c6: #0891b2; /* cyan    — postgres */
+  --c7: #e11d48; /* rose    — object store */
+  --c8: #0d9488; /* teal    — mcp */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1117;
+    --bg-soft: #161b25;
+    --fg: #e7ecf3;
+    --fg-muted: #98a2b3;
+    --border: #2b3444;
+    --accent: #8b8cf9;
+    --accent-soft: #1b1d33;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 10px 28px -14px rgba(0, 0, 0, .7);
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  line-height: 1.65;
+  color: var(--fg);
+  background: var(--bg);
+  background-image:
+    radial-gradient(900px 400px at 12% -8%, rgba(79, 70, 229, .10), transparent 60%),
+    radial-gradient(800px 380px at 92% -4%, rgba(8, 145, 178, .10), transparent 60%);
+  background-repeat: no-repeat;
+}
+
+.wrap { max-width: 1120px; margin: 0 auto; padding: 26px 20px 90px; }
+
+/* --- nav --- */
+nav.top {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg); /* fallback for browsers without color-mix() */
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter: saturate(140%) blur(8px);
+  padding: 11px 20px;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+nav.top .inner {
+  max-width: 1120px; margin: 0 auto;
+  display: flex; flex-wrap: wrap; gap: 6px 4px; align-items: center;
+}
+nav.top a {
+  color: var(--fg-muted);
+  text-decoration: none;
+  font-size: 13px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  white-space: nowrap;
+  transition: background .15s, color .15s;
+}
+nav.top a:hover { background: var(--accent-soft); color: var(--accent); }
+nav.top a.here {
+  color: #fff;
+  font-weight: 600;
+  background: linear-gradient(135deg, var(--c1), var(--c6));
+}
+nav.top .home {
+  font-weight: 750; color: var(--fg); margin-right: 10px; padding-left: 0;
+  letter-spacing: -.01em;
+}
+nav.top .home:hover { background: none; color: var(--fg); }
+
+/* --- text --- */
+h1 {
+  font-size: 32px;
+  margin: 26px 0 6px;
+  letter-spacing: -.02em;
+  line-height: 1.2;
+  color: var(--fg);
+}
+/* Gradient headline only where background-clip:text actually works — otherwise the
+   transparent text-fill would render the heading invisible. */
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  h1 {
+    background: linear-gradient(120deg, var(--c1) 0%, var(--c5) 45%, var(--c6) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+}
+h2 {
+  font-size: 20px;
+  margin: 46px 0 12px;
+  letter-spacing: -.01em;
+  display: flex; align-items: center; gap: 10px;
+}
+h2::before {
+  content: "";
+  width: 5px; height: 20px; flex: none;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--c1), var(--c6));
+}
+h3 { font-size: 15.5px; margin: 26px 0 6px; }
+p { margin: 11px 0; }
+.lede { color: var(--fg-muted); font-size: 16.5px; margin-bottom: 6px; }
+code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: .86em;
+  background: var(--accent-soft);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1px 6px;
+}
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+
+/* --- diagram ---
+   Fixed DARK canvas in both colour schemes. Every classDef is a muted dark fill with a
+   luminous border and light text (see the palette script), so the surface must stay dark —
+   switching this to a light background makes every node unreadable. */
+.diagram {
+  border: 1px solid #26314a;
+  border-radius: var(--r);
+  background:
+    radial-gradient(760px 300px at 15% -10%, rgba(99, 102, 241, .20) 0%, transparent 60%),
+    radial-gradient(680px 280px at 88% 110%, rgba(6, 182, 212, .16) 0%, transparent 60%),
+    #101728;
+  padding: 30px 20px;
+  margin: 22px 0 0;
+  overflow-x: auto;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 18px 40px -22px rgba(0, 0, 0, .8);
+}
+.diagram .mermaid { display: flex; justify-content: center; min-width: min-content; }
+.diagram svg { max-width: 100%; height: auto; display: block; }
+
+/* --- clickable nodes: lift + glow on hover ---
+   Mermaid renders `click X href "..."` as <a xlink:href><g class="node ... clickable">,
+   and positionNode() puts the translate() on the <a>. So a CSS transform here is only
+   safe on the INNER <g> — transforming the <a> would override its translate() and move
+   the node to the wrong place. Do not move these rules onto the anchor. */
+.diagram a { cursor: pointer; outline: none; }
+
+/* Match the inner <g> broadly (`a > g`, not `a > g.node`) so this does not depend on
+   Mermaid's exact class string. */
+.diagram a > g,
+.diagram .is-drillable,
+.diagram g.node.clickable {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  transition: transform .18s cubic-bezier(.2, .7, .3, 1), filter .18s ease;
+}
+.diagram a:hover > g,
+.diagram a:hover > .is-drillable,
+.diagram a:focus-visible > g,
+.diagram g.node.clickable:hover {
+  transform: translateY(-6px) scale(1.04);
+  filter: drop-shadow(0 0 12px rgba(147, 197, 253, .55)) brightness(1.12);
+}
+.diagram a:active > g {
+  transform: translateY(-1px) scale(1.01);
+  filter: drop-shadow(0 0 6px rgba(147, 197, 253, .45)) brightness(1.05);
+}
+
+/* Fallback cue that needs neither transform nor filter support: thicken the outline.
+   classDef writes stroke-width inline, so !important is required to win. */
+.diagram a:hover > g rect,
+.diagram a:hover > g polygon,
+.diagram a:hover > g path,
+.diagram a:hover > g circle,
+.diagram a:hover > g ellipse {
+  stroke-width: 4.5px !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .diagram a > g,
+  .diagram .is-drillable,
+  .diagram g.node.clickable { transition: filter .18s ease; }
+  .diagram a:hover > g,
+  .diagram .is-drillable:hover,
+  .diagram g.node.clickable:hover { transform: none; }
+}
+.caption {
+  font-size: 12.5px;
+  color: var(--fg-muted);
+  margin: 12px 0 26px;
+  text-align: center;
+}
+
+.hint {
+  font-size: 14px;
+  color: var(--fg);
+  background: var(--accent-soft);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--c1);
+  border-radius: 12px;
+  padding: 13px 17px;
+  margin: 20px 0;
+}
+
+/* --- tables: fewer lines, rounded shell --- */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 18px 0;
+  font-size: 14px;
+  display: block;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: var(--shadow);
+}
+th, td {
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: 9px 14px;
+  text-align: left;
+  vertical-align: top;
+}
+th {
+  background: var(--bg-soft);
+  font-weight: 650;
+  font-size: 13px;
+  letter-spacing: .01em;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+}
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover { background: var(--accent-soft); }
+
+/* --- cards --- */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+  margin: 22px 0;
+}
+.card {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px 18px 16px;
+  text-decoration: none;
+  color: inherit;
+  background: var(--bg);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+  transition: transform .16s ease, border-color .16s ease;
+}
+.card::before {
+  content: "";
+  position: absolute; inset: 0 0 auto 0; height: 4px;
+  background: linear-gradient(90deg, var(--c1), var(--c6));
+}
+.cards .card:nth-child(1)::before { background: linear-gradient(90deg, var(--c2), var(--c1)); }
+.cards .card:nth-child(2)::before { background: linear-gradient(90deg, var(--c3), var(--c4)); }
+.cards .card:nth-child(3)::before { background: linear-gradient(90deg, var(--c5), var(--c6)); }
+.cards .card:nth-child(4)::before { background: linear-gradient(90deg, var(--c4), var(--c8)); }
+.cards .card:nth-child(5)::before { background: linear-gradient(90deg, var(--c8), var(--c2)); }
+.card:hover { transform: translateY(-3px); border-color: var(--accent); }
+.card strong { display: block; font-size: 15.5px; margin-bottom: 4px; color: var(--fg); }
+.card span { font-size: 13.5px; color: var(--fg-muted); }
+
+ul.tight, ol.tight { margin: 11px 0; padding-left: 22px; }
+ul.tight li, ol.tight li { margin: 6px 0; }
+
+/* --- stat tiles --- */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 10px;
+  margin: 22px 0 26px;
+}
+.stat {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: var(--bg);
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+.stat b {
+  display: block;
+  font-size: 26px;
+  line-height: 1.15;
+  letter-spacing: -.02em;
+  background: linear-gradient(120deg, var(--c1), var(--c6));
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .stat b { -webkit-text-fill-color: transparent; }
+}
+.stat span {
+  display: block;
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--fg-muted);
+  margin-top: 2px;
+}
+
+/* --- print --- */
+@media print {
+  nav.top, .cards { display: none; }
+  body { background: #fff; color: #000; }
+  .wrap { max-width: none; padding: 0; }
+  /* The diagrams are light-on-dark, so the canvas MUST print or the nodes vanish. */
+  .diagram {
+    break-inside: avoid; page-break-inside: avoid; box-shadow: none;
+    background: #101728 !important;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  table { break-inside: avoid; page-break-inside: avoid; box-shadow: none; }
+  h1 { -webkit-text-fill-color: currentColor; color: #000; }
+  .stat b { -webkit-text-fill-color: currentColor; color: #000; }
+  a { color: #000; text-decoration: underline; }
+  .disclaimer {
+  font-size: 12px;
+  color: var(--fg-muted);
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+  margin-top: 46px;
+  font-style: italic;
+}
+
+footer { border-top: 1px solid #999; }
+}
+
+.disclaimer {
+  font-size: 12px;
+  color: var(--fg-muted);
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+  margin-top: 46px;
+  font-style: italic;
+}
+
+footer {
+  border-top: 1px solid var(--border);
+  margin-top: 14px;
+  padding-top: 14px;
+  font-size: 13px;
+  color: var(--fg-muted);
+}

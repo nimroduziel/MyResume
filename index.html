@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Platform Architecture — Overview</title>
+<link rel="stylesheet" href="assets/style.css?v=6">
+</head>
+<body>
+
+<nav class="top"><div class="inner">
+  <a class="home" href="index.html">Platform Architecture</a>
+  <a class="here" href="index.html">Overview</a>
+  <a href="flows.html">Walkthroughs</a>
+  <a href="inference.html">Inference</a>
+  <a href="data.html">Data</a>
+  <a href="observability.html">Observability</a>
+  <a href="mcp.html">MCP</a>
+</div></nav>
+
+<div class="wrap">
+
+<h1>Self-Hosted LLM Platform</h1>
+<p class="lede">An on-premises LLM platform: OpenShift runs the application and control plane;
+all model inference, vector search and relational state live on dedicated VMs on a separate,
+segregated network.</p>
+
+<div class="stats">
+  <div class="stat"><b>14</b><span>GPUs</span></div>
+  <div class="stat"><b>7</b><span>model VMs</span></div>
+  <div class="stat"><b>5</b><span>models served</span></div>
+  <div class="stat"><b>6</b><span>namespaces</span></div>
+  <div class="stat"><b>2</b><span>pgpool clusters</span></div>
+  <div class="stat"><b>2</b><span>networks</span></div>
+</div>
+
+<div class="hint">
+  <strong>This is the bird view.</strong> Move the cursor over the diagram — any block that
+  <b>lifts and glows</b> opens a detail page for that component. <b>Dotted lines</b> are metrics
+  collection, not request traffic. New here? The
+  <a href="flows.html">request walkthroughs</a> explain the platform faster than any diagram.
+</div>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart TB
+
+  subgraph T1[" Users "]
+    WEB(["<b>Browser Users</b>"])
+    CCLI(["<b>Claude Code CLI</b><br/><small>self-served LiteLLM keys</small>"])
+  end
+
+  subgraph T2[" Cluster network · OpenShift "]
+    WUI("<b>OpenWebUI</b><br/><small>3 pods · Redis 6 pods</small>")
+    N8N("<b>n8n</b><br/><small>2 masters · 3 workers</small>")
+    GW{{"<b>LiteLLM Gateway</b><br/><small>5 pods · Redis 6 pods<br/>every model registered here</small>"}}
+    MCPS("<b>MCP Servers</b><br/><small>Confluence · Jira · GitLab<br/>1 pod each</small>")
+  end
+
+  subgraph T3[" Backend infrastructure "]
+    FLEET("<b>Model Fleet</b><br/><small>7 VMs · 14 GPUs<br/>vLLM · segregated network</small>")
+    QDR[("<b>Qdrant</b><br/><small>2 VMs · segregated network</small>")]
+    PGA[("<b>Postgres · pgpool</b><br/><small>3 VMs · segregated network</small>")]
+    PGB[("<b>Postgres · pgpool</b><br/><small>n8n DB · segregated network</small>")]
+    OBJ[("<b>S3 Object Store</b><br/><small>on-prem</small>")]
+  end
+
+  subgraph T4[" Cluster network · Monitoring namespace "]
+    MON("<b>Prometheus · OpenTelemetry · Alertmanager</b><br/><small>1 pod each</small>")
+  end
+
+  subgraph T5[" Not deployed by this platform "]
+    GRAF("<b>Grafana</b><br/><small>central shared instance<br/>dashboards built for these apps</small>")
+  end
+
+  WEB --> WUI
+  WUI -->|"API key"| GW
+  CCLI -->|"API key"| GW
+  N8N -->|"LLM calls"| GW
+  WUI --> MCPS
+  CCLI --> MCPS
+
+  GW -->|"model calls"| FLEET
+  WUI -->|"vector search"| QDR
+  WUI -->|"SQL via pgpool"| PGA
+  GW -->|"SQL via pgpool"| PGA
+  N8N -->|"SQL via pgpool"| PGB
+  WUI -->|"uploads"| OBJ
+
+  WUI -.->|"metrics"| MON
+  GW -.->|"metrics"| MON
+  FLEET -.->|"metrics"| MON
+  MON -.->|"datasource"| GRAF
+
+  %% Invisible links (~~~) exist purely to control ranking, and they are load-bearing:
+  %% a subgraph is only drawn as its own horizontal band if every node in it ranks
+  %% strictly below every node of the tier above. Without these, n8n ranks level with
+  %% the users (no incoming edge) and the Users/Cluster boxes render SIDE BY SIDE.
+  WEB ~~~ N8N
+  GW ~~~ QDR
+  GW ~~~ PGB
+  GW ~~~ OBJ
+  PGA ~~~ PGB
+  QDR ~~~ OBJ
+  PGB ~~~ MON
+  MON ~~~ GRAF
+
+  click GW href "inference.html" "LiteLLM gateway and model routing"
+  click MCPS href "mcp.html" "MCP servers and their clients"
+  click FLEET href "inference.html" "The GPU/vLLM model fleet"
+  click QDR href "data.html" "Qdrant cluster, HAProxy, GPU indexing"
+  click PGA href "data.html" "Postgres/pgpool clusters"
+  click PGB href "data.html" "Postgres/pgpool clusters"
+  click OBJ href "data.html" "Object storage for document uploads"
+  click MON href "observability.html" "Metrics pipeline and alerting"
+
+  classDef user fill:#241f4d,stroke:#a78bfa,stroke-width:2.5px,color:#ede9fe;
+  classDef ui fill:#12294d,stroke:#60a5fa,stroke-width:2.5px,color:#dbeafe;
+  classDef gate fill:#40280c,stroke:#fbbf24,stroke-width:3px,color:#fde68a;
+  classDef model fill:#0c3327,stroke:#34d399,stroke-width:2.5px,color:#d1fae5;
+  classDef vec fill:#2c1147,stroke:#c084fc,stroke-width:2.5px,color:#f3e8ff;
+  classDef pg fill:#0b3444,stroke:#22d3ee,stroke-width:2.5px,color:#a5f3fc;
+  classDef obj fill:#45101f,stroke:#fb7185,stroke-width:2.5px,color:#ffe4e6;
+  classDef mcp fill:#0a3b36,stroke:#2dd4bf,stroke-width:2.5px,color:#ccfbf1;
+  classDef auto fill:#451331,stroke:#f472b6,stroke-width:2.5px,color:#fbcfe8;
+  classDef obs fill:#26330d,stroke:#a3e635,stroke-width:2.5px,color:#ecfccb;
+  classDef external fill:#1b2333,stroke:#94a3b8,stroke-width:2px,stroke-dasharray:6 4,color:#e2e8f0;
+
+  class WEB,CCLI user
+  class WUI ui
+  class GW gate
+  class FLEET model
+  class QDR vec
+  class PGA,PGB pg
+  class OBJ obj
+  class MCPS mcp
+  class N8N auto
+  class MON obs
+  class GRAF external
+
+  style T1 fill:#1b1830,stroke:#6d5ba8,stroke-width:2px
+  style T2 fill:#13203a,stroke:#3b6ea8,stroke-width:2px
+  style T3 fill:#0f2b2a,stroke:#2f7f6f,stroke-width:2px
+  style T4 fill:#1e2a12,stroke:#5f7a2a,stroke-width:2px
+  style T5 fill:#1b2333,stroke:#64748b,stroke-width:2px,stroke-dasharray:6 4
+</pre>
+</div>
+<p class="caption">Browser users enter at OpenWebUI; Claude Code users go straight to LiteLLM.
+Everything that needs a model converges on <b>LiteLLM</b>, which is the only thing that talks
+to the GPU fleet.</p>
+
+<h2>Reading the diagram</h2>
+<table>
+<thead><tr><th>Cue</th><th>Meaning</th></tr></thead>
+<tbody>
+  <tr><td>Block lifts and glows<br>on hover</td><td>Clickable — opens a detail page for that component</td></tr>
+  <tr><td>Solid arrow</td><td>Request traffic, labelled with the port where it matters</td></tr>
+  <tr><td>Dotted arrow</td><td>Metrics collection by the monitoring stack</td></tr>
+  <tr><td>Hexagon</td><td>Gateway or load balancer that fronts something else</td></tr>
+  <tr><td>Cylinder</td><td>Datastore — Postgres, Qdrant, Redis, object storage</td></tr>
+  <tr><td>Stadium / pill</td><td>An actor or endpoint rather than a service you deploy</td></tr>
+  <tr><td>Dashed border</td><td>External — exists already, not deployed or managed by this platform</td></tr>
+</tbody>
+</table>
+
+<h2>Inside the metrics pipeline</h2>
+<p>The dotted edges above show <em>what</em> gets collected. This shows how the three
+monitoring components hand off to each other.</p>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart TB
+
+  WUI2("OpenWebUI<br/><small>cluster</small>")
+  GW2{{"LiteLLM<br/><small>cluster</small>"}}
+  VLLM2("All vLLM instances<br/><small>7 VMs · segregated network</small>")
+
+  OTEL("<b>OpenTelemetry</b><br/><small>normalizes OpenWebUI metrics</small>")
+  PROM(("<b>Prometheus</b>"))
+  AM(["<b>Alertmanager</b><br/><small>alerts on outage</small>"])
+  GRAF2("<b>Grafana</b><br/><small>external · dashboards</small>")
+
+  WUI2 --> OTEL
+  OTEL --> PROM
+  GW2 --> PROM
+  VLLM2 --> PROM
+  PROM --> AM
+  PROM -->|"datasource"| GRAF2
+
+  click PROM href "observability.html" "Metrics pipeline and alerting"
+  click OTEL href "observability.html" "Why OpenTelemetry is in the picture"
+  click AM href "observability.html" "Alerting detail"
+
+  classDef ui fill:#12294d,stroke:#60a5fa,stroke-width:2.5px,color:#dbeafe;
+  classDef gate fill:#40280c,stroke:#fbbf24,stroke-width:3px,color:#fde68a;
+  classDef model fill:#0c3327,stroke:#34d399,stroke-width:2.5px,color:#d1fae5;
+  classDef obs fill:#26330d,stroke:#a3e635,stroke-width:2.5px,color:#ecfccb;
+  classDef prom fill:#43220a,stroke:#fb923c,stroke-width:3px,color:#fed7aa;
+  classDef alert fill:#450f1c,stroke:#fb7185,stroke-width:2.5px,color:#fecdd3;
+  classDef external fill:#1b2333,stroke:#94a3b8,stroke-width:2px,stroke-dasharray:6 4,color:#e2e8f0;
+  class WUI2 ui
+  class GW2 gate
+  class VLLM2 model
+  class OTEL obs
+  class PROM prom
+  class AM alert
+  class GRAF2 external
+</pre>
+</div>
+<p class="caption">Only OpenWebUI needs the OpenTelemetry detour; LiteLLM and the vLLM fleet
+are scraped directly.</p>
+
+<h2>Descend into the architecture</h2>
+
+<div class="cards">
+  <a class="card" href="inference.html">
+    <strong>Inference &amp; Model Fleet</strong>
+    <span>LiteLLM as the single gateway, and the 7 GPU VMs running vLLM behind it.</span>
+  </a>
+  <a class="card" href="data.html">
+    <strong>Data Layer</strong>
+    <span>Two pgpool Postgres clusters, Qdrant with GPU indexing, S3 storage, Redis caches.</span>
+  </a>
+  <a class="card" href="observability.html">
+    <strong>Observability</strong>
+    <span>How OTel normalizes OpenWebUI metrics, what Prometheus scrapes, what alerts.</span>
+  </a>
+  <a class="card" href="mcp.html">
+    <strong>MCP Servers</strong>
+    <span>Confluence, Jira and GitLab tool servers — consumed by two client surfaces.</span>
+  </a>
+  <a class="card" href="flows.html">
+    <strong>Request Walkthroughs</strong>
+    <span>Step-by-step sequences: a RAG chat, a Claude Code request, an n8n automation.</span>
+  </a>
+</div>
+
+<h2>The OpenShift cluster — namespace inventory</h2>
+<p>the cluster network. Six namespaces, every workload deployed via <strong>Helm chart</strong>. Nothing in
+the cluster holds a GPU — all accelerated work is pushed out to the VM fleet.</p>
+
+<table>
+<thead><tr><th>Namespace</th><th>Workload</th><th>Pods</th><th>Role</th></tr></thead>
+<tbody>
+  <tr><td rowspan="2"><strong>OpenWebUI</strong></td><td>OpenWebUI</td><td>3</td><td>Chat UI for end users; the RAG and upload entry point</td></tr>
+  <tr><td>Redis cluster</td><td>6</td><td>Shared session/state cache across the 3 replicas</td></tr>
+  <tr><td rowspan="2"><strong>LiteLLM</strong></td><td>LiteLLM</td><td>5</td><td>The single gateway in front of every model in the estate</td></tr>
+  <tr><td>Redis cluster</td><td>6</td><td>Key/rate-limit/routing state shared across the 5 replicas</td></tr>
+  <tr><td rowspan="3"><strong>Monitoring</strong></td><td>Prometheus</td><td>1</td><td>Scrapes LiteLLM, OpenWebUI and every vLLM instance</td></tr>
+  <tr><td>Alertmanager</td><td>1</td><td>Fires alerts when a component goes down</td></tr>
+  <tr><td>OpenTelemetry Collector</td><td>1</td><td>Translates OpenWebUI metrics into a Prometheus-friendly form</td></tr>
+  <tr><td rowspan="3"><strong>MCPs</strong></td><td>Confluence MCP</td><td>1</td><td rowspan="3">Tool servers, called by both OpenWebUI and Claude Code</td></tr>
+  <tr><td>Jira MCP</td><td>1</td></tr>
+  <tr><td>GitLab MCP</td><td>1</td></tr>
+  <tr><td rowspan="2"><strong>N8n</strong></td><td>Master</td><td>2</td><td>Workflow automation control plane; calls LiteLLM inside automations</td></tr>
+  <tr><td>Worker + Runner</td><td>3</td><td>Executes queued workflow jobs</td></tr>
+  <tr><td><strong>Support</strong></td><td>Docs (LiteLLM, OpenWebUI, n8n)</td><td>1 each</td><td>Static reference documentation for platform users</td></tr>
+</tbody>
+</table>
+
+<h2>Redundancy posture</h2>
+<p>Replica counts vary by tier. The interesting engineering point is that redundancy was
+applied where load demanded it, not uniformly — which leaves a deliberate, known set of
+single-instance components as the next thing to address.</p>
+
+<table>
+<thead><tr><th>Tier</th><th>Posture</th></tr></thead>
+<tbody>
+  <tr><td>Gateway and chat UI</td><td>Horizontally replicated, with a clustered cache so any replica can serve any session</td></tr>
+  <tr><td>Relational state</td><td>Primary plus streaming replicas, fronted by a connection pooler on every node</td></tr>
+  <tr><td>Workflow automation</td><td>Replicated control plane and worker pool</td></tr>
+  <tr><td>Chat models</td><td>Multiple interchangeable instances; the gateway can route around a failed one</td></tr>
+  <tr><td>Vector search</td><td>Clustered, load-balanced, but with no spare node</td></tr>
+  <tr><td>Retrieval models, tool servers, monitoring</td><td>Single-instance — capacity was never the constraint here, so replication was not prioritised</td></tr>
+</tbody>
+</table>
+
+<div class="hint">
+  <strong>The design insight worth stating plainly:</strong> chat inference is the
+  well-replicated part, because that is where the load is. The retrieval path and the
+  monitoring stack are not, which means <b>RAG availability and observability are both weaker
+  than the headline chat capacity suggests</b>. Replicating those is the top item on the
+  roadmap — and an observability stack that can fail without announcing it is the kind of gap
+  worth designing out rather than discovering.
+</div>
+
+<h2>What crosses the network boundary</h2>
+<p>The cluster and the compute VMs sit on separate, segmented networks. Only these flows are
+permitted across the boundary — everything else stays inside its own segment.</p>
+
+<table>
+<thead><tr><th>From (cluster)</th><th>To (segregated network)</th><th>Purpose</th></tr></thead>
+<tbody>
+  <tr><td>LiteLLM</td><td>vLLM containers</td><td>All model inference — the only path to a GPU</td></tr>
+  <tr><td>OpenWebUI</td><td>Qdrant via HAProxy</td><td>Vector search for RAG</td></tr>
+  <tr><td>OpenWebUI, LiteLLM</td><td>pgpool, platform cluster</td><td>Relational state, separate database each</td></tr>
+  <tr><td>n8n</td><td>pgpool, n8n cluster</td><td>Workflow state</td></tr>
+  <tr><td>Prometheus</td><td>vLLM instances</td><td>Metrics scraping</td></tr>
+</tbody>
+</table>
+<p>The important property is the <em>shape</em> of this list: it is short, and every entry is a
+named service pair with a single purpose. Nothing in the cluster reaches a GPU except through
+the gateway.</p>
+
+<h2>The shape of it in one paragraph</h2>
+<p><strong>LiteLLM is the hinge.</strong> Every model in the estate — four Qwen-3.6-35B
+deployments, two Gemma-4-27B deployments, and an embedding/ranking pair — is registered in
+the LiteLLM config, so nothing talks to a GPU VM directly. Three things call it:
+<strong>OpenWebUI</strong> for chat users, <strong>Claude Code</strong> for engineers who
+self-serve their own keys and get served by the same local models, and <strong>n8n</strong>
+for LLM steps inside automations. OpenWebUI and Claude Code also share the same three MCP
+servers. OpenWebUI additionally reaches <strong>Qdrant</strong> for RAG and an
+<strong>S3-compatible store</strong> for document uploads, and both it and LiteLLM keep
+relational state in a shared <strong>pgpool Postgres cluster</strong> — one database each.
+n8n has its own separate pgpool cluster.</p>
+
+<p class="disclaimer">Generalized reference architecture. Component counts, model
+choices and topology are illustrative of the design pattern rather than a description of any
+live deployment; hostnames, addresses, ports and environment specifics are deliberately
+omitted.</p>
+<footer>
+  Rendered with <a href="https://mermaid.js.org/">Mermaid</a> · source in
+  <code>nimroduziel/MyResume</code> · Last updated 2026-08-08
+</footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script src="assets/diagram.js?v=6"></script>
+</body>
+</html>

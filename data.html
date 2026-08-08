@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Data Layer — Platform Architecture</title>
+<link rel="stylesheet" href="assets/style.css?v=6">
+</head>
+<body>
+
+<nav class="top"><div class="inner">
+  <a class="home" href="index.html">Platform Architecture</a>
+  <a href="index.html">Overview</a>
+  <a href="flows.html">Walkthroughs</a>
+  <a href="inference.html">Inference</a>
+  <a class="here" href="data.html">Data</a>
+  <a href="observability.html">Observability</a>
+  <a href="mcp.html">MCP</a>
+</div></nav>
+
+<div class="wrap">
+
+<h1>Data Layer</h1>
+<p class="lede">Four distinct stores with four distinct jobs: Postgres for durable relational
+state, Qdrant for vector search, S3 for uploaded documents, Redis for in-cluster
+coordination.</p>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart TB
+
+  subgraph VA[" Cluster network · in-cluster "]
+    WUI("<b>OpenWebUI</b><br/><small>3 pods</small>")
+    GW{{"<b>LiteLLM</b><br/><small>5 pods</small>"}}
+    R1[("OpenWebUI Redis<br/><small>6 pods</small>")]
+    R2[("LiteLLM Redis<br/><small>6 pods</small>")]
+  end
+
+  subgraph VB[" Segregated network · backend VMs "]
+    HAP{{"<b>HAProxy</b><br/><small>load balancer</small>"}}
+    QM[("Qdrant Master<br/><small>2x T4 · GPU indexing</small>")]
+    QW[("Qdrant Worker<br/><small>2x T4 · GPU indexing</small>")]
+    PGA[("<b>Postgres · pgpool</b><br/><small>3 VMs</small>")]
+    EMB(["<b>Retrieval models</b><br/><small>embedding + ranking</small>"])
+  end
+
+  OBJ[("<b>S3 Object Store</b><br/><small>on-prem, S3-compatible</small>")]
+
+  WUI --> R1
+  GW --> R2
+  WUI -->|"openwebui DB"| PGA
+  GW -->|"litellm DB"| PGA
+  WUI -->|"vectors"| HAP
+  HAP --> QM
+  HAP --> QW
+  WUI -->|"embed / rerank<br/>via LiteLLM"| EMB
+  WUI -->|"uploads"| OBJ
+
+  %% invisible links: force the the segregated network tier strictly below the the cluster network tier, and
+  %% stack EMB rather than widening the row. Without these the two subgraphs
+  %% share ranks and render side by side instead of stacked.
+  R1 ~~~ PGA
+  R1 ~~~ HAP
+  R1 ~~~ OBJ
+  HAP ~~~ EMB
+
+  click GW href "inference.html" "LiteLLM gateway detail"
+  click EMB href "inference.html" "Embedding and ranking models"
+
+  classDef ui fill:#12294d,stroke:#60a5fa,stroke-width:2.5px,color:#dbeafe;
+  classDef gate fill:#40280c,stroke:#fbbf24,stroke-width:3px,color:#fde68a;
+  classDef vec fill:#2c1147,stroke:#c084fc,stroke-width:2.5px,color:#f3e8ff;
+  classDef cache fill:#3d240c,stroke:#fdba74,stroke-width:2.5px,color:#ffedd5;
+  classDef pg fill:#0b3444,stroke:#22d3ee,stroke-width:2.5px,color:#a5f3fc;
+  classDef obj fill:#45101f,stroke:#fb7185,stroke-width:2.5px,color:#ffe4e6;
+  classDef model fill:#0c3327,stroke:#34d399,stroke-width:2.5px,color:#d1fae5;
+  class WUI ui
+  class GW,HAP gate
+  class QM,QW vec
+  class R1,R2 cache
+  class PGA pg
+  class OBJ obj
+  class EMB model
+
+  style VA fill:#13203a,stroke:#3b6ea8,stroke-width:2px
+  style VB fill:#0f2b2a,stroke:#2f7f6f,stroke-width:2px
+</pre>
+</div>
+<p class="caption">The Qdrant master and worker also replicate between themselves; that link is
+omitted here so the client-facing paths stay clear.</p>
+
+<h2>Qdrant vector cluster</h2>
+<ul class="tight">
+  <li><strong>2 VMs, each with 2 × T4 GPUs</strong> — one runs the <strong>master</strong>,
+    one runs the <strong>worker</strong>.</li>
+  <li>The T4s are not idle: they drive <strong>Qdrant's GPU-accelerated indexing</strong>,
+    which is what keeps index builds off the CPU as the corpus grows.</li>
+  <li><strong>HAProxy</strong> fronts the cluster and load-balances
+    across the instances, so clients address one endpoint rather than individual nodes.</li>
+  <li><strong>OpenWebUI is the only consumer</strong>, using it as the vector DB behind RAG.
+    It reaches HAProxy across the the cluster network → the segregated network boundary.</li>
+</ul>
+
+<h2>Postgres: two separate pgpool clusters</h2>
+<p>Relational state lives on the segregated network, not in the cluster. There are <strong>two independent
+pgpool Postgres clusters</strong> — the platform's own, and a dedicated one for n8n.</p>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart TB
+
+  WUI("<b>OpenWebUI</b><br/><small>cluster</small>")
+  GW{{"<b>LiteLLM</b><br/><small>cluster</small>"}}
+  N8N("<b>n8n</b><br/><small>cluster</small>")
+
+  subgraph CA[" Platform cluster · 3 VMs · segregated network "]
+    PGP1{{"<b>pgpool</b><br/><small>on all 3 VMs</small>"}}
+    V1[("VM 1<br/><small>primary</small>")]
+    V2[("VM 2<br/><small>replica</small>")]
+    V3[("VM 3<br/><small>replica</small>")]
+    PGP1 --> V1
+    PGP1 --> V2
+    PGP1 --> V3
+    %% stack the three VMs vertically instead of spreading them across a row
+    V1 ~~~ V2
+    V2 ~~~ V3
+  end
+
+  subgraph CB[" n8n cluster "]
+    PGP2{{"<b>pgpool</b>"}}
+    VN[("Postgres<br/><small>n8n DB</small>")]
+    PGP2 --> VN
+  end
+
+  WUI -->|"openwebui DB"| PGP1
+  GW -->|"litellm DB"| PGP1
+  N8N --> PGP2
+  click GW href "inference.html" "LiteLLM gateway detail"
+
+  classDef ui fill:#12294d,stroke:#60a5fa,stroke-width:2.5px,color:#dbeafe;
+  classDef gate fill:#40280c,stroke:#fbbf24,stroke-width:3px,color:#fde68a;
+  classDef auto fill:#451331,stroke:#f472b6,stroke-width:2.5px,color:#fbcfe8;
+  classDef pool fill:#0b3444,stroke:#22d3ee,stroke-width:3px,color:#a5f3fc;
+  classDef pg fill:#0b3444,stroke:#22d3ee,stroke-width:2.5px,color:#a5f3fc;
+  class WUI ui
+  class GW gate
+  class N8N auto
+  class PGP1,PGP2 pool
+  class V1,V2,V3,VN pg
+
+  style CA fill:#0d2b38,stroke:#2b7f96,stroke-width:2px
+  style CB fill:#341128,stroke:#9d4a77,stroke-width:2px
+</pre>
+</div>
+<p class="caption">Both clusters are addressed through pgpool, never by
+connecting to a Postgres node directly.</p>
+
+<ul class="tight">
+  <li><strong>Platform cluster — 3 VMs on the segregated network.</strong> Every VM runs <strong>both pgpool
+    and a Postgres instance</strong>: one primary with two streaming replicas. Clients connect
+    to pgpool.</li>
+  <li><strong>Two databases, one cluster.</strong> OpenWebUI and LiteLLM each get their
+    <strong>own separate database</strong> inside it — shared infrastructure, isolated
+    schemas.</li>
+  <li><strong>n8n has its own cluster</strong>, also pgpool-fronted and also on the segregated network, kept
+    entirely separate from the platform's.</li>
+</ul>
+
+<div class="hint">
+  <strong>Three storage tiers, three jobs.</strong> Postgres holds durable relational state
+  (users, chats, keys, spend, workflows). Redis holds ephemeral shared state so replicas can
+  coordinate. Qdrant holds vectors. Losing Redis is a performance and session problem; losing
+  Postgres is a data problem.
+</div>
+
+<h2>Object storage</h2>
+<p>An <strong>on-prem S3-compatible object store</strong> (MinIO-style, not AWS). OpenWebUI
+connects to it for <strong>user document uploads</strong> — this is where the raw files land
+before their embeddings end up in Qdrant.</p>
+
+<h2>Redis: two independent clusters</h2>
+<table>
+<thead><tr><th>Cluster</th><th>Pods</th><th>Serves</th><th>Why it exists</th></tr></thead>
+<tbody>
+  <tr><td>OpenWebUI Redis</td><td>6</td><td>OpenWebUI (3 pods)</td>
+      <td>Shared state so any replica can serve any user session</td></tr>
+  <tr><td>LiteLLM Redis</td><td>6</td><td>LiteLLM (5 pods)</td>
+      <td>Shared key, rate-limit and routing state across the gateway replicas</td></tr>
+</tbody>
+</table>
+
+<div class="hint">
+  These two Redis clusters are <strong>deliberately separate</strong> — same technology,
+  no shared state, independent Helm releases. A LiteLLM cache problem cannot take down user
+  sessions in OpenWebUI, and vice versa.
+</div>
+
+<h2>The RAG path, end to end</h2>
+<ol class="tight">
+  <li>A user uploads a document in OpenWebUI → the file is stored in the
+      <strong>S3-compatible store</strong>.</li>
+  <li>OpenWebUI requests embeddings through <strong>LiteLLM</strong>, which routes to
+      <strong>llama-embedding-8b</strong> on the GPU fleet.</li>
+  <li>Vectors are written to <strong>Qdrant</strong> through HAProxy.</li>
+  <li>At query time, OpenWebUI searches Qdrant, optionally reranks candidates with
+      <strong>llama-ranking-8b</strong>, then sends the assembled prompt to a chat model —
+      all through the same LiteLLM gateway.</li>
+</ol>
+
+<p class="disclaimer">Generalized reference architecture. Component counts, model
+choices and topology are illustrative of the design pattern rather than a description of any
+live deployment; hostnames, addresses, ports and environment specifics are deliberately
+omitted.</p>
+<footer><a href="index.html">← Back to the bird view</a> · Last updated 2026-08-08</footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script src="assets/diagram.js?v=6"></script>
+</body>
+</html>

@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inference &amp; Model Fleet — Platform Architecture</title>
+<link rel="stylesheet" href="assets/style.css?v=6">
+</head>
+<body>
+
+<nav class="top"><div class="inner">
+  <a class="home" href="index.html">Platform Architecture</a>
+  <a href="index.html">Overview</a>
+  <a href="flows.html">Walkthroughs</a>
+  <a class="here" href="inference.html">Inference</a>
+  <a href="data.html">Data</a>
+  <a href="observability.html">Observability</a>
+  <a href="mcp.html">MCP</a>
+</div></nav>
+
+<div class="wrap">
+
+<h1>Inference &amp; Model Fleet</h1>
+<p class="lede">LiteLLM is the single gateway. Nothing reaches a GPU VM directly —
+every vLLM endpoint is registered in the LiteLLM config.</p>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart TB
+
+  subgraph CLIENTS[" Clients "]
+    WUI(["OpenWebUI<br/><small>3 pods</small>"])
+    CCLI(["Claude Code CLI<br/><small>user workstations</small>"])
+  end
+
+  GW{{"<b>LiteLLM</b><br/><small>5 pods · model registry</small>"}}
+
+  subgraph FLEET[" Segregated network · GPU VM fleet — vLLM in Docker "]
+    QF("<b>Qwen-3.6-35B</b> FP8<br/><small>chat · 4 VMs</small>")
+    GF("<b>Gemma-4-27B</b><br/><small>chat · 2 VMs</small>")
+    EF("<b>Retrieval models</b><br/><small>1 VM · 2x L40</small>")
+
+    QF --> Q1("VM 1<br/><small>2x L40 · TP=2</small>")
+    Q1 ~~~ Q2("VM 2<br/><small>2x L40 · TP=2</small>")
+    Q2 ~~~ Q3("VM 3<br/><small>2x L40 · TP=2</small>")
+    Q3 ~~~ Q4("VM 4<br/><small>2x L40 · TP=2</small>")
+
+    GF --> G1("VM 5<br/><small>2x L40 · TP=2 · FP8</small>")
+    G1 ~~~ G2("VM 6<br/><small>2x A100 · TP=2</small>")
+
+    EF --> E1("llama-embedding-8b<br/><small>1x L40</small>")
+    E1 ~~~ E2("llama-ranking-8b<br/><small>1x L40</small>")
+  end
+
+  WUI -->|"API key"| GW
+  CCLI -->|"self-served key"| GW
+
+  GW --> QF
+  GW --> GF
+  GW --> EF
+
+  classDef gate fill:#40280c,stroke:#fbbf24,stroke-width:3px,color:#fde68a;
+  classDef qwen fill:#0c3327,stroke:#34d399,stroke-width:2.5px,color:#d1fae5;
+  classDef gemma fill:#3a250e,stroke:#fb923c,stroke-width:2.5px,color:#fed7aa;
+  classDef emb fill:#2c1147,stroke:#c084fc,stroke-width:2.5px,color:#f3e8ff;
+  classDef vmq fill:#12241d,stroke:#2f855a,stroke-width:1.5px,color:#a7f3d0;
+  classDef vmg fill:#26190c,stroke:#9a5b25,stroke-width:1.5px,color:#fed7aa;
+  classDef vme fill:#1e1230,stroke:#7e4bab,stroke-width:1.5px,color:#e9d5ff;
+  classDef user fill:#241f4d,stroke:#a78bfa,stroke-width:2.5px,color:#ede9fe;
+  class GW gate
+  class QF qwen
+  class GF gemma
+  class EF emb
+  class Q1,Q2,Q3,Q4 vmq
+  class G1,G2 vmg
+  class E1,E2 vme
+  class WUI,CCLI user
+
+  style CLIENTS fill:#1b1830,stroke:#6d5ba8,stroke-width:2px
+  style FLEET fill:#0f2b2a,stroke:#2f7f6f,stroke-width:2px
+</pre>
+</div>
+<p class="caption">Each family's VMs are stacked in a column beneath it. LiteLLM addresses every
+VM's vLLM container individually on <code>OpenAI-compatible API</code> — there is no per-family proxy; the
+grouping is presentational only.</p>
+
+<h2>The fleet: 7 VMs, 14 GPUs</h2>
+
+<table>
+<thead><tr><th>VMs</th><th>GPUs per VM</th><th>Model</th><th>Quantization</th><th>GPU strategy</th></tr></thead>
+<tbody>
+  <tr><td>4</td><td>2 × L40</td><td>Qwen-3.6-35B</td><td>FP8</td><td>Tensor parallel across both GPUs — one instance per VM</td></tr>
+  <tr><td>1</td><td>2 × L40</td><td>Gemma-4-27B</td><td>FP8</td><td>Tensor parallel across both GPUs</td></tr>
+  <tr><td>1</td><td>2 × A100</td><td>Gemma-4-27B</td><td>—</td><td>Tensor parallel across both GPUs</td></tr>
+  <tr><td>1</td><td>2 × L40</td><td>llama-embedding-8b<br>llama-ranking-8b</td><td>—</td><td><em>Exception:</em> one model pinned per GPU</td></tr>
+</tbody>
+</table>
+
+<div class="hint">
+  <strong>One serving instance per VM, not two.</strong> Every multi-GPU model VM shards a
+  single model across both GPUs via tensor parallelism — trading replica count for larger
+  effective context and higher per-request throughput. The embedding/ranking VM is the sole
+  exception, because two distinct 8B models each fit comfortably on one L40.
+</div>
+
+<h2>Runtime and transport</h2>
+<ul class="tight">
+  <li>Every GPU VM runs <strong>vLLM inside a Docker container</strong>, listening on
+    <code>OpenAI-compatible API</code> and exposing an OpenAI-compatible API.</li>
+  <li>The VMs sit on a <strong>separate, segmented network</strong> from the cluster, with only
+    the specific service-to-service flows permitted across the boundary.</li>
+  <li>Model selection, fallbacks and load balancing are all expressed in the
+    <strong>LiteLLM config</strong>, which is the authoritative registry of what exists.</li>
+</ul>
+
+<h2>Two client surfaces, one backend</h2>
+<h3>OpenWebUI</h3>
+<p>Authenticates to LiteLLM with an <strong>API key</strong>. Chat users never see the model
+fleet; they pick from LiteLLM's model aliases. OpenWebUI also uses the embedding and ranking
+models — via the same gateway — to power RAG over <a href="data.html">Qdrant</a>.</p>
+
+<h3>Claude Code</h3>
+<p>Claude Code is <strong>fully supported across the network</strong>. Engineers who install
+it <strong>self-serve their own API key in LiteLLM</strong> and point the CLI at the gateway.
+Those requests are served by the <strong>local self-hosted models</strong> — the traffic never
+leaves for the real Anthropic API. Claude Code sessions can also call the
+<a href="mcp.html">MCP servers</a> directly.</p>
+
+<p class="disclaimer">Generalized reference architecture. Component counts, model
+choices and topology are illustrative of the design pattern rather than a description of any
+live deployment; hostnames, addresses, ports and environment specifics are deliberately
+omitted.</p>
+<footer><a href="index.html">← Back to the bird view</a> · Last updated 2026-08-08</footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script src="assets/diagram.js?v=6"></script>
+</body>
+</html>

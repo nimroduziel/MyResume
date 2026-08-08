@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Request Walkthroughs — Platform Architecture</title>
+<link rel="stylesheet" href="assets/style.css?v=6">
+</head>
+<body>
+
+<nav class="top"><div class="inner">
+  <a class="home" href="index.html">Platform Architecture</a>
+  <a href="index.html">Overview</a>
+  <a class="here" href="flows.html">Walkthroughs</a>
+  <a href="inference.html">Inference</a>
+  <a href="data.html">Data</a>
+  <a href="observability.html">Observability</a>
+  <a href="mcp.html">MCP</a>
+</div></nav>
+
+<div class="wrap">
+
+<h1>Request Walkthroughs</h1>
+<p class="lede">The other pages show what is connected to what. These show what actually
+happens, in order, for the three ways work enters the platform.</p>
+
+<div class="hint">
+  If you only read one thing on this site, read <b>Flow 1</b>. It touches every component —
+  LiteLLM, both model types, Qdrant, S3 and Postgres — in a single request.
+</div>
+
+<h2>Flow 1 — A chat user asks a question about a document</h2>
+<p>The full RAG path. Note that <strong>OpenWebUI never talks to a GPU directly</strong>:
+embedding, reranking and chat completion are all LiteLLM calls, just to different models.</p>
+
+<div class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as Browser User
+  participant W as OpenWebUI
+  participant S as S3 Object Store
+  participant L as LiteLLM
+  participant F as vLLM Fleet
+  participant Q as Qdrant
+  participant P as Postgres
+
+  rect rgba(96, 165, 250, .13)
+  Note over U,S: Ingest — happens once per uploaded document
+  U->>W: Upload document + question
+  W->>S: Store the raw file
+  W->>L: Embed the text chunks
+  L->>F: embedding model
+  F-->>L: Vectors
+  L-->>W: Vectors
+  W->>Q: Upsert vectors via HAProxy
+  end
+
+  rect rgba(52, 211, 153, .13)
+  Note over W,P: Retrieve and answer
+  W->>L: Embed the question
+  L->>F: llama-embedding-8b
+  F-->>W: Query vector
+  W->>Q: Similarity search
+  Q-->>W: Candidate chunks
+  W->>L: Rerank candidates
+  L->>F: llama-ranking-8b
+  F-->>W: Ordered chunks
+  W->>L: Chat completion + retrieved context
+  L->>F: Qwen-3.6-35B, FP8
+  F-->>L: Answer
+  L-->>W: Answer
+  end
+
+  W->>P: Persist chat via pgpool
+  W-->>U: Answer with citations
+</pre>
+</div>
+<p class="caption">Three different models are used in one request, all through the same
+gateway. Steps 1–7 only run when a new document is uploaded.</p>
+
+<h2>Flow 2 — An engineer uses Claude Code</h2>
+<p>No Anthropic API is involved. LiteLLM serves these requests from the
+<strong>local self-hosted models</strong>, and the engineer's key is one they issued
+themselves.</p>
+
+<div class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor E as Engineer
+  participant L as LiteLLM
+  participant C as Claude Code CLI
+  participant F as vLLM Fleet
+  participant J as Jira MCP
+
+  rect rgba(251, 191, 36, .13)
+  Note over E,L: One-time setup
+  E->>L: Create a personal API key
+  L-->>E: Key
+  E->>C: Configure the CLI with that key
+  end
+
+  C->>L: Completion request + key
+  Note right of L: Validates the key and rate limit<br/>against its Redis cluster,<br/>records spend in Postgres
+  L->>F: Route to a local model
+  F-->>L: Completion
+  L-->>C: Completion
+
+  C->>J: Fetch ticket context
+  J-->>C: Ticket data
+  Note over C,J: MCP calls bypass LiteLLM entirely —<br/>they are not model traffic
+</pre>
+</div>
+<p class="caption">Two independent relationships: one with the gateway for models, one directly
+with the MCP servers for tools.</p>
+
+<h2>Flow 3 — An n8n automation calls a model</h2>
+<p>n8n is the third LiteLLM consumer. It is also the only workload using the
+<strong>second</strong> pgpool Postgres cluster.</p>
+
+<div class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant T as Trigger
+  participant M as n8n Master
+  participant K as n8n Worker
+  participant L as LiteLLM
+  participant F as vLLM Fleet
+  participant P as n8n Postgres
+
+  T->>M: Schedule or webhook fires
+  M->>P: Record the execution
+  M->>K: Dispatch the job
+  K->>L: LLM step inside the workflow
+  L->>F: Route to a local model
+  F-->>L: Completion
+  L-->>K: Completion
+  K->>P: Persist the result
+  K-->>M: Job complete
+</pre>
+</div>
+<p class="caption">n8n's state lives in its own Postgres cluster, entirely separate from the
+one OpenWebUI and LiteLLM share.</p>
+
+<h2>What the three flows have in common</h2>
+<ul class="tight">
+  <li><strong>Every model call goes through LiteLLM.</strong> Three different entry points,
+    one gateway, one place where keys, rate limits, routing and spend are enforced.</li>
+  <li><strong>Nothing but LiteLLM opens <code>OpenAI-compatible API</code>.</strong> That is the only reason
+    the cluster needs to reach the GPU network for inference at all.</li>
+  <li><strong>MCP traffic is not model traffic.</strong> It never touches the gateway, and it
+    never leaves the cluster network.</li>
+  <li><strong>Each consumer owns its own durable state</strong> — OpenWebUI and LiteLLM in
+    separate databases on the platform cluster, n8n on its own cluster.</li>
+</ul>
+
+<p class="disclaimer">Generalized reference architecture. Component counts, model
+choices and topology are illustrative of the design pattern rather than a description of any
+live deployment; hostnames, addresses, ports and environment specifics are deliberately
+omitted.</p>
+<footer>
+  <a href="index.html">← Back to the bird view</a> · Last updated 2026-08-08
+</footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script src="assets/diagram.js?v=6"></script>
+</body>
+</html>
