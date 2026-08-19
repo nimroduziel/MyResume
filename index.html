@@ -26,9 +26,9 @@ all model inference, vector search and relational state live on dedicated VMs on
 segregated network.</p>
 
 <div class="stats">
-  <div class="stat"><b>14</b><span>GPUs</span></div>
-  <div class="stat"><b>7</b><span>model VMs</span></div>
-  <div class="stat"><b>5</b><span>models served</span></div>
+  <div class="stat"><b>20</b><span>GPUs</span></div>
+  <div class="stat"><b>9</b><span>model VMs</span></div>
+  <div class="stat"><b>4</b><span>models served</span></div>
   <div class="stat"><b>6</b><span>namespaces</span></div>
   <div class="stat"><b>2</b><span>pgpool clusters</span></div>
   <div class="stat"><b>2</b><span>networks</span></div>
@@ -58,7 +58,7 @@ flowchart TB
   end
 
   subgraph T3[" Backend infrastructure "]
-    FLEET("<b>Model Fleet</b><br/><small>7 VMs · 14 GPUs<br/>vLLM · segregated network</small>")
+    FLEET("<b>Model Fleet</b><br/><small>9 VMs · 20 GPUs<br/>vLLM · segregated network</small>")
     QDR[("<b>Qdrant</b><br/><small>2 VMs · segregated network</small>")]
     PGA[("<b>Postgres · pgpool</b><br/><small>3 VMs · segregated network</small>")]
     PGB[("<b>Postgres · pgpool</b><br/><small>n8n DB · segregated network</small>")]
@@ -173,7 +173,7 @@ flowchart TB
 
   WUI2("OpenWebUI<br/><small>cluster</small>")
   GW2{{"LiteLLM<br/><small>cluster</small>"}}
-  VLLM2("All vLLM instances<br/><small>7 VMs · segregated network</small>")
+  VLLM2("All vLLM instances<br/><small>9 VMs · segregated network</small>")
 
   OTEL("<b>OpenTelemetry</b><br/><small>normalizes OpenWebUI metrics</small>")
   PROM(("<b>Prometheus</b>"))
@@ -215,7 +215,7 @@ are scraped directly.</p>
 <div class="cards">
   <a class="card" href="inference.html">
     <strong>Inference &amp; Model Fleet</strong>
-    <span>LiteLLM as the single gateway, and the 7 GPU VMs running vLLM behind it.</span>
+    <span>LiteLLM as the single gateway, and the 9 GPU VMs running vLLM behind it.</span>
   </a>
   <a class="card" href="data.html">
     <strong>Data Layer</strong>
@@ -303,9 +303,10 @@ named service pair with a single purpose. Nothing in the cluster reaches a GPU e
 the gateway.</p>
 
 <h2>The shape of it in one paragraph</h2>
-<p><strong>LiteLLM is the hinge.</strong> Every model in the estate — four Qwen-3.6-35B
-deployments, two Gemma-4-27B deployments, and an embedding/ranking pair — is registered in
-the LiteLLM config, so nothing talks to a GPU VM directly. Three things call it:
+<p><strong>LiteLLM is the hinge.</strong> Every model in the estate — four Qwen3.6-35B-A3B
+deployments, five gemma-4-26B-A4B deployments spread across four VMs, and an
+embedding/reranking pair — is registered in the LiteLLM config, so nothing talks to a GPU VM
+directly. Three things call it:
 <strong>OpenWebUI</strong> for chat users, <strong>Claude Code</strong> for engineers who
 self-serve their own keys and get served by the same local models, and <strong>n8n</strong>
 for LLM steps inside automations. OpenWebUI and Claude Code also share the same three MCP
@@ -320,7 +321,7 @@ live deployment; hostnames, addresses, ports and environment specifics are delib
 omitted.</p>
 <footer>
   Rendered with <a href="https://mermaid.js.org/">Mermaid</a> · source in
-  <code>nimroduziel/MyResume</code> · Last updated 2026-08-08
+  <code>nimroduziel/MyResume</code> · Last updated 2026-08-19
 </footer>
 </div>
 

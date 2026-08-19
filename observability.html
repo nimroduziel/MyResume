@@ -32,7 +32,7 @@ flowchart TB
   subgraph SRC[" Scrape targets "]
     WUI("<b>OpenWebUI</b><br/><small>3 pods · cluster</small>")
     GW{{"<b>LiteLLM</b><br/><small>5 pods · cluster</small>"}}
-    VLLM("<b>All vLLM instances</b><br/><small>7 VMs · segregated network</small>")
+    VLLM("<b>All vLLM instances</b><br/><small>11 containers · 9 VMs<br/>segregated network</small>")
   end
 
   OTEL("<b>OpenTelemetry</b><br/><small>1 pod · translates OpenWebUI<br/>metrics into Prometheus format</small>")
@@ -79,7 +79,7 @@ Prometheus-friendly.</strong> OpenWebUI is the one component whose native metric
 doesn't drop straight into a Prometheus scrape, so OTel sits in between as a translator.</p>
 
 <div class="hint">
-  Everything else — LiteLLM and all seven vLLM instances — is scraped by Prometheus
+  Everything else — LiteLLM and all eleven vLLM containers — is scraped by Prometheus
   <strong>directly</strong>. Only OpenWebUI takes the detour through OTel.
 </div>
 
@@ -89,7 +89,7 @@ doesn't drop straight into a Prometheus scrape, so OTel sits in between as a tra
 <tbody>
   <tr><td>LiteLLM (5 pods)</td><td>Cluster network · in-cluster</td><td>Scraped directly</td></tr>
   <tr><td>OpenWebUI (3 pods)</td><td>Cluster network · in-cluster</td><td>Via the OTel Collector</td></tr>
-  <tr><td>All vLLM instances (7 VMs)</td><td>Segregated network</td>
+  <tr><td>All vLLM instances (11 containers on 9 VMs)</td><td>Segregated network</td>
       <td>Scraped directly, across the network boundary</td></tr>
   <tr><td>Grafana <em>(consumer, not a target)</em></td><td>External · shared instance</td>
       <td>Queries Prometheus as a datasource; dashboards only</td></tr>
@@ -125,8 +125,9 @@ deep SLO or capacity alerting.</p>
 <ul class="tight">
   <li><strong>Gateway-level visibility</strong> — LiteLLM metrics cover every request in the
     platform, since all traffic funnels through it.</li>
-  <li><strong>Per-model visibility</strong> — scraping each vLLM instance individually means
-    per-VM GPU and throughput data, not just an aggregate.</li>
+  <li><strong>Per-model visibility</strong> — scraping each vLLM container individually means
+    per-container GPU and throughput data, not just an aggregate. On the VM that hosts two
+    containers, each is a separate scrape target.</li>
   <li><strong>User-facing visibility</strong> — OpenWebUI metrics, once normalized, land in
     the same Prometheus as everything else.</li>
   <li><strong>Dashboards without owning the tool</strong> — the Grafana instance is shared and
@@ -137,7 +138,7 @@ deep SLO or capacity alerting.</p>
 choices and topology are illustrative of the design pattern rather than a description of any
 live deployment; hostnames, addresses, ports and environment specifics are deliberately
 omitted.</p>
-<footer><a href="index.html">← Back to the bird view</a> · Last updated 2026-08-08</footer>
+<footer><a href="index.html">← Back to the bird view</a> · Last updated 2026-08-19</footer>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>

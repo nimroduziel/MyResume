@@ -13,7 +13,7 @@ every component on it links to a page with that area's detail.
 | ---- | ------ |
 | [Overview](index.html) | The platform at a glance, legend, redundancy posture, namespace inventory, permitted flows |
 | [Walkthroughs](flows.html) | Step-by-step sequences for the three ways work enters the platform |
-| [Inference](inference.html) | LiteLLM gateway + 7 GPU VMs running vLLM |
+| [Inference](inference.html) | LiteLLM gateway + 9 GPU VMs running vLLM |
 | [Data](data.html) | Two pgpool Postgres clusters, Qdrant, S3 object store, Redis caches |
 | [Observability](observability.html) | Prometheus / OpenTelemetry / Alertmanager, and the external Grafana |
 | [MCP](mcp.html) | Confluence, Jira and GitLab tool servers |

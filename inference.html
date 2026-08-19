@@ -36,20 +36,22 @@ flowchart TB
   GW{{"<b>LiteLLM</b><br/><small>5 pods · model registry</small>"}}
 
   subgraph FLEET[" Segregated network · GPU VM fleet — vLLM in Docker "]
-    QF("<b>Qwen-3.6-35B</b> FP8<br/><small>chat · 4 VMs</small>")
-    GF("<b>Gemma-4-27B</b><br/><small>chat · 2 VMs</small>")
-    EF("<b>Retrieval models</b><br/><small>1 VM · 2x L40</small>")
+    QF("<b>Qwen3.6-35B-A3B</b> FP8<br/><small>chat · 4 VMs</small>")
+    GF("<b>gemma-4-26B-A4B</b><br/><small>chat · 4 VMs · LMCache</small>")
+    EF("<b>Retrieval models</b><br/><small>VM 9 · 2x L4</small>")
 
     QF --> Q1("VM 1<br/><small>2x L40 · TP=2</small>")
     Q1 ~~~ Q2("VM 2<br/><small>2x L40 · TP=2</small>")
     Q2 ~~~ Q3("VM 3<br/><small>2x L40 · TP=2</small>")
     Q3 ~~~ Q4("VM 4<br/><small>2x L40 · TP=2</small>")
 
-    GF --> G1("VM 5<br/><small>2x L40 · TP=2 · FP8</small>")
-    G1 ~~~ G2("VM 6<br/><small>2x A100 · TP=2</small>")
+    GF --> G1("VM 5<br/><small>2x L40 · TP=2</small>")
+    G1 ~~~ G2("VM 6<br/><small>2x L40 · TP=2</small>")
+    G2 ~~~ G3("VM 7<br/><small>2x A100 · TP=2</small>")
+    G3 ~~~ G4("VM 8<br/><small>4x L4 · 2 containers<br/>TP=2 each</small>")
 
-    EF --> E1("llama-embedding-8b<br/><small>1x L40</small>")
-    E1 ~~~ E2("llama-ranking-8b<br/><small>1x L40</small>")
+    EF --> E1("llama-embed-nemotron-8b<br/><small>1x L4</small>")
+    E1 ~~~ E2("llama-nemotron-rerank-1b-v2<br/><small>1x L4</small>")
   end
 
   WUI -->|"API key"| GW
@@ -72,7 +74,7 @@ flowchart TB
   class GF gemma
   class EF emb
   class Q1,Q2,Q3,Q4 vmq
-  class G1,G2 vmg
+  class G1,G2,G3,G4 vmg
   class E1,E2 vme
   class WUI,CCLI user
 
@@ -81,27 +83,38 @@ flowchart TB
 </pre>
 </div>
 <p class="caption">Each family's VMs are stacked in a column beneath it. LiteLLM addresses every
-VM's vLLM container individually on <code>OpenAI-compatible API</code> — there is no per-family proxy; the
+vLLM container individually on <code>OpenAI-compatible API</code> — there is no per-family proxy; the
 grouping is presentational only.</p>
 
-<h2>The fleet: 7 VMs, 14 GPUs</h2>
+<h2>The fleet: 9 VMs, 20 GPUs, 11 vLLM containers</h2>
 
 <table>
-<thead><tr><th>VMs</th><th>GPUs per VM</th><th>Model</th><th>Quantization</th><th>GPU strategy</th></tr></thead>
+<thead><tr><th>VMs</th><th>GPUs per VM</th><th>Containers</th><th>Model</th><th>Quantization</th><th>GPU strategy</th></tr></thead>
 <tbody>
-  <tr><td>4</td><td>2 × L40</td><td>Qwen-3.6-35B</td><td>FP8</td><td>Tensor parallel across both GPUs — one instance per VM</td></tr>
-  <tr><td>1</td><td>2 × L40</td><td>Gemma-4-27B</td><td>FP8</td><td>Tensor parallel across both GPUs</td></tr>
-  <tr><td>1</td><td>2 × A100</td><td>Gemma-4-27B</td><td>—</td><td>Tensor parallel across both GPUs</td></tr>
-  <tr><td>1</td><td>2 × L40</td><td>llama-embedding-8b<br>llama-ranking-8b</td><td>—</td><td><em>Exception:</em> one model pinned per GPU</td></tr>
+  <tr><td>4</td><td>2 × L40</td><td>1</td><td>Qwen3.6-35B-A3B</td><td>FP8</td><td>Tensor parallel across both GPUs — one instance per VM</td></tr>
+  <tr><td>2</td><td>2 × L40</td><td>1</td><td>gemma-4-26B-A4B <em>+ LMCache</em></td><td>—</td><td>Tensor parallel across both GPUs</td></tr>
+  <tr><td>1</td><td>2 × A100</td><td>1</td><td>gemma-4-26B-A4B <em>+ LMCache</em></td><td>—</td><td>Tensor parallel across both GPUs</td></tr>
+  <tr><td>1</td><td>4 × L4</td><td>2</td><td>gemma-4-26B-A4B <em>+ LMCache</em></td><td>—</td><td>Two containers on one VM, each tensor parallel over its own pair of GPUs</td></tr>
+  <tr><td>1</td><td>2 × L4</td><td>2</td><td>llama-embed-nemotron-8b<br>llama-nemotron-rerank-1b-v2</td><td>—</td><td><em>Exception:</em> one model pinned per GPU, no tensor parallelism</td></tr>
 </tbody>
 </table>
 
 <div class="hint">
-  <strong>One serving instance per VM, not two.</strong> Every multi-GPU model VM shards a
-  single model across both GPUs via tensor parallelism — trading replica count for larger
-  effective context and higher per-request throughput. The embedding/ranking VM is the sole
-  exception, because two distinct 8B models each fit comfortably on one L40.
+  <strong>Tensor parallelism over replica count.</strong> Every chat container shards a single
+  model across 2 GPUs rather than running two independent replicas — trading replica count for
+  larger effective context and higher per-request throughput. Two VMs break the
+  one-container-per-VM shape: the 4 × L4 host packs <em>two</em> Gemma containers, each with its
+  own pair of GPUs, and the retrieval VM runs two distinct models pinned one per GPU because
+  neither needs sharding.
 </div>
+
+<h2>LMCache on the Gemma deployments</h2>
+<p>Every Gemma container runs <strong>LMCache</strong> alongside vLLM. It extends KV-cache reuse
+beyond a single request's prefix, so repeated context — long system prompts, re-sent chat
+history, the retrieved chunks a RAG turn resends — is not recomputed from scratch on every
+call. That matters most on the <strong>4 × L4</strong> host, where per-GPU compute is the
+scarcest in the fleet and cache reuse buys back the most latency. The Qwen VMs run vLLM without
+it.</p>
 
 <h2>Runtime and transport</h2>
 <ul class="tight">
@@ -130,7 +143,7 @@ leaves for the real Anthropic API. Claude Code sessions can also call the
 choices and topology are illustrative of the design pattern rather than a description of any
 live deployment; hostnames, addresses, ports and environment specifics are deliberately
 omitted.</p>
-<footer><a href="index.html">← Back to the bird view</a> · Last updated 2026-08-08</footer>
+<footer><a href="index.html">← Back to the bird view</a> · Last updated 2026-08-19</footer>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>

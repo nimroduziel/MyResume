@@ -61,8 +61,8 @@ infrastructure-as-code. The systems described below live elsewhere.
    Mermaid *silently ignores* it, and the result is a sideways, tangled layout. This was the
    single biggest cause of the first version looking bad.
 2. **Prefer tree shapes.** A graph with `edges ≈ nodes − 1` lays out with zero crossings.
-   Where a real fan-out existed (LiteLLM → 8 model VMs), an intermediate grouping node per
-   model family turns the fan into a tree without losing information.
+   Where a real fan-out existed (LiteLLM → the whole model VM fleet), an intermediate
+   grouping node per model family turns the fan into a tree without losing information.
 3. **Push detail into prose and tables, not more edges.** Secondary relationships
    (Prometheus scrape targets, Qdrant master↔worker replication, namespace-internal traffic)
    are stated in text and captioned under the diagram rather than drawn, which keeps the
@@ -146,19 +146,26 @@ Everything below is deployed via **Helm charts**.
 
 ### GPU / model fleet (the segregated network)
 
-Every GPU VM runs **vLLM inside a Docker container, listening on its API port**. Multi-GPU
-model VMs use **tensor parallelism — one model instance sharded across both GPUs**, not two
-independent replicas.
+Every GPU VM runs **vLLM inside a Docker container, listening on its API port**. Chat model
+containers use **tensor parallelism — one model instance sharded across 2 GPUs**, not two
+independent replicas. Every Gemma container additionally runs **LMCache** for KV-cache reuse.
 
-| VMs | GPUs per VM | Serves |
-| --- | ----------- | ------ |
-| 4 | 2 × L40 | Qwen-3.6-35B, FP8 quantized (tensor parallel over 2 GPUs) |
-| 1 | 2 × L40 | Gemma-4-27B, FP8 quantized (tensor parallel over 2 GPUs) |
-| 1 | 2 × A100 | Gemma-4-27B (second, higher-capability deployment) |
-| 1 | 2 × L40 | llama-embedding-8b (1 GPU) + llama-ranking-8b (1 GPU) — 1 model per GPU here |
+| VMs | GPUs per VM | Containers per VM | Serves |
+| --- | ----------- | ----------------- | ------ |
+| 4 | 2 × L40 | 1 | Qwen3.6-35B-A3B, FP8 quantized (tensor parallel over 2 GPUs) |
+| 2 | 2 × L40 | 1 | gemma-4-26B-A4B + LMCache (tensor parallel over 2 GPUs) |
+| 1 | 2 × A100 | 1 | gemma-4-26B-A4B + LMCache (tensor parallel over 2 GPUs) |
+| 1 | 4 × L4 | 2 | gemma-4-26B-A4B + LMCache — two containers, each tensor parallel over its own 2 GPUs |
+| 1 | 2 × L4 | 2 | llama-embed-nemotron-8b (1 GPU) + llama-nemotron-rerank-1b-v2 (1 GPU) — 1 model per GPU here |
 
-**7 model VMs, 14 GPUs total.** The embedding/ranking VM is the one exception to tensor
-parallelism: it runs two distinct 8B models, one pinned per GPU.
+**9 model VMs, 20 GPUs, 11 vLLM containers total.** Two VMs break the one-container-per-VM
+pattern: the 4 × L4 VM runs two Gemma containers side by side (tensor parallel over 2 GPUs
+each), and the retrieval VM runs two distinct models, one pinned per GPU with no tensor
+parallelism.
+
+Model names are the real upstream releases: `Qwen3.6-35B-A3B`, `google/gemma-4-26B-A4B`,
+`nvidia/llama-embed-nemotron-8b`, `nvidia/llama-nemotron-rerank-1b-v2`. There is no Gemma 4
+27B — the published sizes are E2B, E4B, 12B, 26B-A4B and 31B.
 
 ### Postgres (the segregated network) — two separate pgpool clusters
 

@@ -59,15 +59,15 @@ sequenceDiagram
   rect rgba(52, 211, 153, .13)
   Note over W,P: Retrieve and answer
   W->>L: Embed the question
-  L->>F: llama-embedding-8b
+  L->>F: llama-embed-nemotron-8b
   F-->>W: Query vector
   W->>Q: Similarity search
   Q-->>W: Candidate chunks
   W->>L: Rerank candidates
-  L->>F: llama-ranking-8b
+  L->>F: llama-nemotron-rerank-1b-v2
   F-->>W: Ordered chunks
   W->>L: Chat completion + retrieved context
-  L->>F: Qwen-3.6-35B, FP8
+  L->>F: Qwen3.6-35B-A3B, FP8
   F-->>L: Answer
   L-->>W: Answer
   end
@@ -161,7 +161,7 @@ choices and topology are illustrative of the design pattern rather than a descri
 live deployment; hostnames, addresses, ports and environment specifics are deliberately
 omitted.</p>
 <footer>
-  <a href="index.html">← Back to the bird view</a> · Last updated 2026-08-08
+  <a href="index.html">← Back to the bird view</a> · Last updated 2026-08-19
 </footer>
 </div>
 
