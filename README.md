@@ -4,7 +4,7 @@ Interactive architecture documentation for a self-hosted, on-premises LLM platfo
 OpenShift for the application and control plane, dedicated GPU VMs on a separate, segmented
 network for all inference and vector search.
 
-**→ [View the diagrams](https://nimroduziel.github.io/MyResume/)**
+**→ [View the diagrams](https://nimroduziel.github.io/AI-Architecture/)**
 
 The site is a "bird view" you can descend into: the overview shows the whole platform, and
 every component on it links to a page with that area's detail.

@@ -37,7 +37,7 @@ flowchart TB
 
   subgraph FLEET[" Segregated network · GPU VM fleet — vLLM in Docker "]
     QF("<b>Qwen3.6-35B-A3B</b> FP8<br/><small>chat · 4 VMs</small>")
-    GF("<b>gemma-4-26B-A4B</b><br/><small>chat · 4 VMs · LMCache</small>")
+    GF("<b>gemma-4-26B-A4B</b> FP8<br/><small>chat · 4 VMs · LMCache</small>")
     EF("<b>Retrieval models</b><br/><small>VM 9 · 2x L4</small>")
 
     QF --> Q1("VM 1<br/><small>2x L40 · TP=2</small>")
@@ -92,9 +92,9 @@ grouping is presentational only.</p>
 <thead><tr><th>VMs</th><th>GPUs per VM</th><th>Containers</th><th>Model</th><th>Quantization</th><th>GPU strategy</th></tr></thead>
 <tbody>
   <tr><td>4</td><td>2 × L40</td><td>1</td><td>Qwen3.6-35B-A3B</td><td>FP8</td><td>Tensor parallel across both GPUs — one instance per VM</td></tr>
-  <tr><td>2</td><td>2 × L40</td><td>1</td><td>gemma-4-26B-A4B <em>+ LMCache</em></td><td>—</td><td>Tensor parallel across both GPUs</td></tr>
-  <tr><td>1</td><td>2 × A100</td><td>1</td><td>gemma-4-26B-A4B <em>+ LMCache</em></td><td>—</td><td>Tensor parallel across both GPUs</td></tr>
-  <tr><td>1</td><td>4 × L4</td><td>2</td><td>gemma-4-26B-A4B <em>+ LMCache</em></td><td>—</td><td>Two containers on one VM, each tensor parallel over its own pair of GPUs</td></tr>
+  <tr><td>2</td><td>2 × L40</td><td>1</td><td>gemma-4-26B-A4B <em>+ LMCache</em></td><td>FP8</td><td>Tensor parallel across both GPUs</td></tr>
+  <tr><td>1</td><td>2 × A100</td><td>1</td><td>gemma-4-26B-A4B <em>+ LMCache</em></td><td>FP8*</td><td>Tensor parallel across both GPUs</td></tr>
+  <tr><td>1</td><td>4 × L4</td><td>2</td><td>gemma-4-26B-A4B <em>+ LMCache</em></td><td>FP8</td><td>Two containers on one VM, each tensor parallel over its own pair of GPUs</td></tr>
   <tr><td>1</td><td>2 × L4</td><td>2</td><td>llama-embed-nemotron-8b<br>llama-nemotron-rerank-1b-v2</td><td>—</td><td><em>Exception:</em> one model pinned per GPU, no tensor parallelism</td></tr>
 </tbody>
 </table>
@@ -107,6 +107,11 @@ grouping is presentational only.</p>
   own pair of GPUs, and the retrieval VM runs two distinct models pinned one per GPU because
   neither needs sharding.
 </div>
+
+<p class="caption">* The same FP8 Gemma weights are served on every Gemma host. The L40 and L4
+GPUs are Ada-generation and execute FP8 natively; the A100 pair is Ampere and has no FP8 tensor
+cores, so the runtime upconverts the weights there. Same checkpoint, different arithmetic
+underneath.</p>
 
 <h2>LMCache on the Gemma deployments</h2>
 <p>Every Gemma container runs <strong>LMCache</strong> alongside vLLM. It extends KV-cache reuse

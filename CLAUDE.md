@@ -12,7 +12,7 @@ Context for Claude Code when working in this repository.
 
 ## What this repository is
 
-A **GitHub Pages site** (`nimroduziel/MyResume`, branch `main`, served from root) whose
+A **GitHub Pages site** (`nimroduziel/AI-Architecture`, branch `main`, served from root) whose
 purpose is to **document and publish the architecture of a self-hosted enterprise LLM
 platform** as an interactive set of Mermaid diagrams.
 
@@ -153,15 +153,19 @@ independent replicas. Every Gemma container additionally runs **LMCache** for KV
 | VMs | GPUs per VM | Containers per VM | Serves |
 | --- | ----------- | ----------------- | ------ |
 | 4 | 2 × L40 | 1 | Qwen3.6-35B-A3B, FP8 quantized (tensor parallel over 2 GPUs) |
-| 2 | 2 × L40 | 1 | gemma-4-26B-A4B + LMCache (tensor parallel over 2 GPUs) |
-| 1 | 2 × A100 | 1 | gemma-4-26B-A4B + LMCache (tensor parallel over 2 GPUs) |
-| 1 | 4 × L4 | 2 | gemma-4-26B-A4B + LMCache — two containers, each tensor parallel over its own 2 GPUs |
+| 2 | 2 × L40 | 1 | gemma-4-26B-A4B, FP8 quantized + LMCache (tensor parallel over 2 GPUs) |
+| 1 | 2 × A100 | 1 | gemma-4-26B-A4B, FP8 quantized + LMCache (tensor parallel over 2 GPUs) |
+| 1 | 4 × L4 | 2 | gemma-4-26B-A4B, FP8 quantized + LMCache — two containers, each tensor parallel over its own 2 GPUs |
 | 1 | 2 × L4 | 2 | llama-embed-nemotron-8b (1 GPU) + llama-nemotron-rerank-1b-v2 (1 GPU) — 1 model per GPU here |
 
 **9 model VMs, 20 GPUs, 11 vLLM containers total.** Two VMs break the one-container-per-VM
 pattern: the 4 × L4 VM runs two Gemma containers side by side (tensor parallel over 2 GPUs
 each), and the retrieval VM runs two distinct models, one pinned per GPU with no tensor
 parallelism.
+
+The same FP8 Gemma checkpoint is served on every Gemma host. L40 and L4 are Ada-generation and
+execute FP8 natively; the A100 pair is Ampere with no FP8 tensor cores, so the runtime
+upconverts there — same weights, different arithmetic.
 
 Model names are the real upstream releases: `Qwen3.6-35B-A3B`, `google/gemma-4-26B-A4B`,
 `nvidia/llama-embed-nemotron-8b`, `nvidia/llama-nemotron-rerank-1b-v2`. There is no Gemma 4
